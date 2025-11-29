@@ -8,10 +8,11 @@
         const debugDiv = document.getElementById('debugInfo');
         const debugText = document.getElementById('debugText');
         
-        debugText.textContent = message;
-        debugDiv.style.display = 'block';
-        debugDiv.style.background = isError ? '#ff4444' : '#00cc00';
-        
+        if (debugDiv && debugText) {
+            debugText.textContent = message;
+            debugDiv.style.display = 'block';
+            debugDiv.style.background = isError ? '#ff4444' : '#00cc00';
+        }
         console.log(`DEBUG: ${message}`);
     }
 
@@ -37,7 +38,7 @@
         }
     }
 
-    // Enhanced API Functions for Your Backend Structure
+    // Enhanced API Functions
     async function fetchVideos(endpoint = '/videos') {
         if (!isBackendOnline) {
             showDebugInfo('Using fallback data - Backend offline', true);
@@ -55,9 +56,9 @@
             const data = await response.json();
             console.log('✅ API Response:', data);
             
-            // Handle your backend response structure
-            if (data.videos) return data.videos; // For paginated responses
-            if (Array.isArray(data)) return data; // For direct array responses
+            // Handle different response structures
+            if (data.videos && Array.isArray(data.videos)) return data.videos;
+            if (Array.isArray(data)) return data;
             return [];
             
         } catch (error) {
@@ -67,24 +68,35 @@
         }
     }
 
-    // Get trending videos (matches your backend endpoint)
+    // Get trending videos
     async function fetchTrendingVideos() {
-        return await fetchVideos('/trending?limit=6');
+        const videos = await fetchVideos('/trending?limit=6');
+        console.log('📊 Trending videos:', videos);
+        return videos;
     }
 
-    // Get recent videos (matches your backend endpoint)
+    // Get recent videos - FIXED for your backend structure
     async function fetchRecentVideos() {
-        return await fetchVideos('/recent?limit=6');
+        try {
+            const response = await fetch(`${API_BASE}/videos?sortBy=createdAt&sortOrder=desc&limit=6`);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            
+            const data = await response.json();
+            console.log('📊 Recent videos data:', data);
+            
+            // Your backend returns {videos: [], totalPages: x, currentPage: x}
+            if (data.videos && Array.isArray(data.videos)) {
+                return data.videos;
+            }
+            return [];
+        } catch (error) {
+            console.error('Recent videos error:', error);
+            return getFallbackVideos();
+        }
     }
 
-    // Enhanced search function for your backend
+    // Enhanced search function
     async function searchVideos(query) {
-        if (!isBackendOnline) {
-            return getFallbackVideos().filter(video => 
-                video.title.toLowerCase().includes(query.toLowerCase())
-            );
-        }
-
         try {
             const response = await fetch(`${API_BASE}/search?q=${encodeURIComponent(query)}&limit=12`);
             
@@ -95,195 +107,64 @@
             
         } catch (error) {
             console.error('Search error:', error);
-            // Fallback client-side search
             return getFallbackVideos().filter(video => 
                 video.title.toLowerCase().includes(query.toLowerCase())
             );
         }
     }
 
-    // Enhanced like function for your backend
-    async function likeVideo(videoId) {
-        if (!isBackendOnline) {
-            showDebugInfo('Liked video (demo mode)');
-            return { success: true, likes: Math.floor(Math.random() * 100) + 1 };
-        }
-
-        try {
-            const response = await fetch(`${API_BASE}/videos/${videoId}/like`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-            });
-            
-            const data = await response.json();
-            if (response.ok) {
-                showDebugInfo('Video liked successfully!');
-                return data;
-            } else {
-                throw new Error(data.message || 'Like failed');
-            }
-        } catch (error) {
-            console.error('Like error:', error);
-            showDebugInfo('Like failed - demo mode', true);
-            return { success: false };
-        }
-    }
-
-    // Enhanced download function for your backend
-    async function downloadVideo(videoId) {
-        if (!isBackendOnline) {
-            showDebugInfo('Download started (demo mode)');
-            return { success: true };
-        }
-
-        try {
-            const response = await fetch(`${API_BASE}/videos/${videoId}/download`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-            });
-            
-            const data = await response.json();
-            if (response.ok) {
-                showDebugInfo('Download started successfully!');
-                // If there's a download URL, redirect to it
-                if (data.downloadUrl) {
-                    window.open(data.downloadUrl, '_blank');
-                }
-                return data;
-            } else {
-                throw new Error(data.message || 'Download failed');
-            }
-        } catch (error) {
-            console.error('Download error:', error);
-            showDebugInfo('Download failed - demo mode', true);
-            return { success: false };
-        }
-    }
-
-    // Get categories from your backend
-    async function fetchCategories() {
-        try {
-            const response = await fetch(`${API_BASE}/categories`);
-            if (response.ok) {
-                const data = await response.json();
-                return data;
-            }
-            return [];
-        } catch (error) {
-            console.error('Categories error:', error);
-            return [];
-        }
-    }
-
-    // Fallback data when backend is offline - matches your sample data structure
+    // Fallback data
     function getFallbackVideos() {
         return [
             {
                 _id: 'fallback-1',
                 title: "Epic Soccer Goals Compilation",
-                description: "Amazing soccer goals from top leagues around the world. Perfect for sports highlights and montages.",
-                videoUrl: "/uploads/sample-soccer.mp4",
-                thumbnailUrl: "/uploads/thumbnail-soccer.jpg",
+                description: "Amazing soccer goals from top leagues around the world.",
                 duration: "0:45",
                 category: "sports",
                 uploader: "SoccerEdits",
                 views: 12500,
                 likes: 842,
                 downloads: 1560,
-                resolution: "1080p",
-                tags: ["soccer", "goals", "sports", "football", "highlights"],
                 isCopyrightFree: true
             },
             {
                 _id: 'fallback-2',
-                title: "Anime AMV - Epic Fight Scenes",
-                description: "Best anime fight scenes compilation with epic background music. Great for AMV creators.",
-                videoUrl: "/uploads/sample-anime.mp4",
-                thumbnailUrl: "/uploads/thumbnail-anime.jpg",
+                title: "Anime AMV - Epic Fight Scenes", 
+                description: "Best anime fight scenes compilation.",
                 duration: "1:22",
                 category: "anime",
                 uploader: "AnimeVibes",
                 views: 8500,
                 likes: 512,
                 downloads: 890,
-                resolution: "1080p",
-                tags: ["anime", "fight", "amv", "action", "japanese"],
                 isCopyrightFree: true
             },
             {
                 _id: 'fallback-3',
                 title: "Cinematic Slow Motion Sequences",
-                description: "Beautiful slow motion shots from various films and cinematic productions.",
-                videoUrl: "/uploads/sample-slowmo.mp4",
-                thumbnailUrl: "/uploads/thumbnail-slowmo.jpg",
+                description: "Beautiful slow motion shots from films.",
                 duration: "0:38",
                 category: "slowmo",
                 uploader: "FilmMagic",
                 views: 7200,
                 likes: 421,
                 downloads: 650,
-                resolution: "1080p",
-                tags: ["slowmo", "cinematic", "film", "dramatic"],
-                isCopyrightFree: true
-            },
-            {
-                _id: 'fallback-4',
-                title: "Romantic Sunset Proposal Moments",
-                description: "Beautiful romantic moments and proposal scenes with golden hour lighting.",
-                videoUrl: "/uploads/sample-love.mp4",
-                thumbnailUrl: "/uploads/thumbnail-love.jpg",
-                duration: "0:28",
-                category: "love",
-                uploader: "CinematicLove",
-                views: 4200,
-                likes: 328,
-                downloads: 891,
-                resolution: "1080p",
-                tags: ["love", "romantic", "proposal", "sunset", "couple"],
-                isCopyrightFree: true
-            },
-            {
-                _id: 'fallback-5',
-                title: "Martial Arts Fight Scene Compilation",
-                description: "Epic martial arts combat sequences from action films and demonstrations.",
-                videoUrl: "/uploads/sample-action.mp4",
-                thumbnailUrl: "/uploads/thumbnail-action.jpg",
-                duration: "0:52",
-                category: "action",
-                uploader: "ActionFlow",
-                views: 5700,
-                likes: 512,
-                downloads: 1200,
-                resolution: "1080p",
-                tags: ["action", "fight", "martial arts", "combat", "epic"],
-                isCopyrightFree: true
-            },
-            {
-                _id: 'fallback-6',
-                title: "Aesthetic Nature Transitions",
-                description: "Beautiful nature scenes with smooth transitions and calming visuals.",
-                videoUrl: "/uploads/sample-aesthetic.mp4",
-                thumbnailUrl: "/uploads/thumbnail-aesthetic.jpg",
-                duration: "0:35",
-                category: "aesthetic",
-                uploader: "VisualArts",
-                views: 6800,
-                likes: 387,
-                downloads: 742,
-                resolution: "1080p",
-                tags: ["aesthetic", "nature", "transitions", "calm", "beautiful"],
                 isCopyrightFree: true
             }
         ];
     }
 
-    // Enhanced video display with debugging
+    // FIXED: Enhanced video display function
     function displayVideos(videos, containerId) {
         const container = document.getElementById(containerId);
+        
+        if (!container) {
+            console.error(`❌ Container not found: ${containerId}`);
+            return;
+        }
+        
+        console.log(`📺 Displaying ${videos.length} videos in ${containerId}:`, videos);
         
         if (!videos || videos.length === 0) {
             container.innerHTML = `
@@ -300,7 +181,7 @@
         container.innerHTML = '';
 
         videos.forEach(video => {
-            const isFallback = video._id.includes('fallback');
+            const isFallback = video._id && video._id.includes('fallback');
             const videoCard = `
                 <div class="card fade-in" onclick="showVideoDetails('${video._id}')">
                     <div class="card-thumbnail">
@@ -309,18 +190,18 @@
                         <i class="fas fa-play-circle"></i>
                     </div>
                     <div class="card-content">
-                        <h3 class="card-title">${video.title}</h3>
+                        <h3 class="card-title">${video.title || 'Untitled Video'}</h3>
                         <div class="card-meta">
-                            <span>By ${video.uploader}</span>
-                            <span>${video.duration}</span>
+                            <span>By ${video.uploader || 'Unknown'}</span>
+                            <span>${video.duration || '0:00'}</span>
                         </div>
                         <div class="card-stats">
-                            <span><i class="fas fa-eye"></i> ${video.views?.toLocaleString() || 0}</span>
+                            <span><i class="fas fa-eye"></i> ${(video.views || 0).toLocaleString()}</span>
                             <span><i class="fas fa-heart"></i> ${video.likes || 0}</span>
                             <span><i class="fas fa-download"></i> ${video.downloads || 0}</span>
                         </div>
                         ${video.isCopyrightFree ? '<div class="copyright-free"><i class="fas fa-check-circle"></i> Copyright Free</div>' : ''}
-                        ${isFallback ? '<div style="color: #ff4444; font-size: 0.7rem; margin-top: 0.5rem;">⚠️ Demo Data - Backend Offline</div>' : ''}
+                        ${isFallback ? '<div style="color: #ff4444; font-size: 0.7rem; margin-top: 0.5rem;">⚠️ Demo Data</div>' : ''}
                     </div>
                 </div>
             `;
@@ -341,12 +222,13 @@
         // Hide debug after 5 seconds if successful
         if (isBackendOnline) {
             setTimeout(() => {
-                document.getElementById('debugInfo').style.display = 'none';
+                const debugDiv = document.getElementById('debugInfo');
+                if (debugDiv) debugDiv.style.display = 'none';
             }, 5000);
         }
     }
 
-    // Load homepage videos
+    // Load homepage videos - FIXED
     async function loadHomepageVideos() {
         try {
             showDebugInfo('Loading videos from database...');
@@ -355,6 +237,9 @@
                 fetchTrendingVideos(),
                 fetchRecentVideos()
             ]);
+            
+            console.log('🎯 Final trending:', trending);
+            console.log('🎯 Final recent:', recent);
             
             displayVideos(trending, 'trendingVideos');
             displayVideos(recent, 'recentVideos');
@@ -383,7 +268,7 @@
         }
     });
 
-    // Category filter - matches your backend categories
+    // Category filter
     async function filterByCategory(category) {
         const videos = await fetchVideos(`/videos?category=${category}&limit=12`);
         displayVideos(videos, 'trendingVideos');
@@ -409,7 +294,7 @@
                 <h2>${video.title}</h2>
                 <div style="display: flex; gap: 1rem; margin: 1rem 0; color: var(--secondary-text); flex-wrap: wrap;">
                     <span><i class="fas fa-user"></i> ${video.uploader}</span>
-                    <span><i class="fas fa-eye"></i> ${video.views?.toLocaleString() || 0} views</span>
+                    <span><i class="fas fa-eye"></i> ${(video.views || 0).toLocaleString()} views</span>
                     <span><i class="fas fa-clock"></i> ${video.duration}</span>
                     <span><i class="fas fa-video"></i> ${video.resolution || '1080p'}</span>
                 </div>
@@ -453,7 +338,6 @@
     async function handleLike(videoId) {
         const result = await likeVideo(videoId);
         if (result && result.success) {
-            // Refresh the video details to show updated like count
             showVideoDetails(videoId);
         }
     }
@@ -462,34 +346,63 @@
     async function handleDownload(videoId) {
         const result = await downloadVideo(videoId);
         if (result && result.success) {
-            // If download URL is provided, it will open automatically
             if (!result.downloadUrl) {
                 showDebugInfo('Download started successfully!');
             }
         }
     }
 
+    async function likeVideo(videoId) {
+        try {
+            const response = await fetch(`${API_BASE}/videos/${videoId}/like`, { method: 'POST' });
+            const data = await response.json();
+            if (response.ok) {
+                showDebugInfo('Video liked successfully!');
+                return data;
+            }
+        } catch (error) {
+            console.error('Like error:', error);
+        }
+        return { success: false };
+    }
+
+    async function downloadVideo(videoId) {
+        try {
+            const response = await fetch(`${API_BASE}/videos/${videoId}/download`, { method: 'POST' });
+            const data = await response.json();
+            if (response.ok) {
+                showDebugInfo('Download started successfully!');
+                return data;
+            }
+        } catch (error) {
+            console.error('Download error:', error);
+        }
+        return { success: false };
+    }
+
     // Theme toggle functionality
     const themeToggle = document.getElementById('themeToggle');
     const body = document.body;
     
-    themeToggle.addEventListener('click', () => {
-        body.classList.toggle('light-mode');
-        
-        if (body.classList.contains('light-mode')) {
-            themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
-            localStorage.setItem('theme', 'light');
-        } else {
-            themeToggle.innerHTML = '<i class="fas fa-moon"></i>';
-            localStorage.setItem('theme', 'dark');
-        }
-    });
+    if (themeToggle) {
+        themeToggle.addEventListener('click', () => {
+            body.classList.toggle('light-mode');
+            
+            if (body.classList.contains('light-mode')) {
+                themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
+                localStorage.setItem('theme', 'light');
+            } else {
+                themeToggle.innerHTML = '<i class="fas fa-moon"></i>';
+                localStorage.setItem('theme', 'dark');
+            }
+        });
 
-    // Check for saved theme preference
-    const savedTheme = localStorage.getItem('theme');
-    if (savedTheme === 'light') {
-        body.classList.add('light-mode');
-        themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
+        // Check for saved theme preference
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme === 'light') {
+            body.classList.add('light-mode');
+            themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
+        }
     }
 
     // Utility functions
@@ -498,7 +411,7 @@
     }
 
     function showUploadModal() {
-        alert('Upload functionality would be available when backend is connected and user is logged in.');
+        alert('Upload functionality would be available when user is logged in.');
     }
 
     function showLoginModal() {
@@ -510,7 +423,7 @@
     }
 
     function toggleUserMenu() {
-        alert('User menu would be available when backend is connected and user is logged in.');
+        alert('User menu would be available when user is logged in.');
     }
 
     // Initialize when page loads
@@ -518,11 +431,14 @@
         initializeApp();
         
         // Close modal when clicking outside
-        document.getElementById('videoModal').addEventListener('click', function(e) {
-            if (e.target === this) {
-                closeVideoModal();
-            }
-        });
+        const videoModal = document.getElementById('videoModal');
+        if (videoModal) {
+            videoModal.addEventListener('click', function(e) {
+                if (e.target === this) {
+                    closeVideoModal();
+                }
+            });
+        }
     });
 
     // Fade-in animation on scroll
