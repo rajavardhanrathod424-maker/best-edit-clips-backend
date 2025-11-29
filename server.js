@@ -1,459 +1,333 @@
-<script>
-    // Enhanced API Configuration for Your Backend
-    const API_BASE = 'https://best-edit-clips-backend.onrender.com/api';
-    let isBackendOnline = false;
+// server.js - Complete Backend for Best Edit Clips
+const express = require('express');
+const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const multer = require('multer');
+const path = require('path');
+const cors = require('cors');
+const fs = require('fs');
 
-    // Debug function to show connection status
-    function showDebugInfo(message, isError = false) {
-        const debugDiv = document.getElementById('debugInfo');
-        const debugText = document.getElementById('debugText');
-        
-        if (debugDiv && debugText) {
-            debugText.textContent = message;
-            debugDiv.style.display = 'block';
-            debugDiv.style.background = isError ? '#ff4444' : '#00cc00';
-        }
-        console.log(`DEBUG: ${message}`);
+const app = express();
+
+// ======================
+// MIDDLEWARE
+// ======================
+app.use(cors());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true }));
+app.use('/uploads', express.static('uploads'));
+
+// ======================
+// DATABASE CONNECTION
+// ======================
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/best-edit-clips';
+mongoose.connect(MONGODB_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+})
+.then(() => console.log('✅ MongoDB Connected'))
+.catch(err => console.log('❌ MongoDB Error:', err));
+
+// ======================
+// DATABASE MODELS
+// ======================
+
+// User Model
+const userSchema = new mongoose.Schema({
+  username: { type: String, required: true, unique: true },
+  email: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+  avatar: { type: String, default: '' },
+  bio: { type: String, default: '' },
+  role: { type: String, default: 'user' }
+}, { timestamps: true });
+
+userSchema.pre('save', async function(next) {
+  if (!this.isModified('password')) return next();
+  this.password = await bcrypt.hash(this.password, 12);
+  next();
+});
+
+userSchema.methods.comparePassword = async function(candidatePassword) {
+  return await bcrypt.compare(candidatePassword, this.password);
+};
+
+const User = mongoose.model('User', userSchema);
+
+// Video Model
+const videoSchema = new mongoose.Schema({
+  title: { type: String, required: true },
+  description: { type: String, default: '' },
+  videoUrl: { type: String, required: true },
+  thumbnailUrl: { type: String, required: true },
+  duration: { type: String, required: true },
+  category: { type: String, required: true },
+  tags: [{ type: String }],
+  uploader: { type: String, required: true },
+  views: { type: Number, default: 0 },
+  likes: { type: Number, default: 0 },
+  downloads: { type: Number, default: 0 },
+  isCopyrightFree: { type: Boolean, default: true },
+  resolution: { type: String, default: '1080p' }
+}, { timestamps: true });
+
+const Video = mongoose.model('Video', videoSchema);
+
+// Category Model
+const categorySchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  slug: { type: String, required: true, unique: true },
+  icon: { type: String, default: 'fas fa-folder' },
+  color: { type: String, default: '#00ffcc' },
+  videoCount: { type: Number, default: 0 }
+}, { timestamps: true });
+
+const Category = mongoose.model('Category', categorySchema);
+
+// ======================
+// UTILITY FUNCTIONS
+// ======================
+const initializeDefaultData = async () => {
+  try {
+    // Create default categories
+    const defaultCategories = [
+      { name: 'Sports Edits', slug: 'sports', icon: 'fas fa-basketball-ball', color: '#00ffcc' },
+      { name: 'Anime Edits', slug: 'anime', icon: 'fas fa-robot', color: '#ff00aa' },
+      { name: 'Movie Edits', slug: 'movie', icon: 'fas fa-film', color: '#ff5e00' },
+      { name: 'Slow-Mo Edits', slug: 'slowmo', icon: 'fas fa-hourglass-half', color: '#00ff88' },
+      { name: 'Aesthetic Edits', slug: 'aesthetic', icon: 'fas fa-palette', color: '#9d00ff' },
+      { name: 'Love Edits', slug: 'love', icon: 'fas fa-heart', color: '#ff4d6d' },
+      { name: 'Action Edits', slug: 'action', icon: 'fas fa-fist-raised', color: '#ff0000' },
+      { name: 'Music Videos', slug: 'music', icon: 'fas fa-music', color: '#ffcc00' }
+    ];
+
+    for (const categoryData of defaultCategories) {
+      await Category.findOneAndUpdate(
+        { slug: categoryData.slug },
+        categoryData,
+        { upsert: true, new: true }
+      );
     }
+    console.log('✅ Default categories initialized');
 
-    // Test backend connection on page load
-    async function testBackendConnection() {
-        try {
-            showDebugInfo('Testing backend connection...');
-            
-            const response = await fetch(`${API_BASE}/health`);
-            
-            if (response.ok) {
-                const data = await response.json();
-                isBackendOnline = true;
-                showDebugInfo(`✅ Backend connected: ${data.message || 'Healthy'}`);
-                return true;
-            } else {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-        } catch (error) {
-            isBackendOnline = false;
-            showDebugInfo(`❌ Backend offline: ${error.message}`, true);
-            return false;
+    // Create sample videos if none exist
+    const videoCount = await Video.countDocuments();
+    if (videoCount === 0) {
+      const sampleVideos = [
+        {
+          title: "Epic Soccer Goals Compilation",
+          description: "Amazing soccer goals from top leagues around the world.",
+          videoUrl: "/uploads/sample-soccer.mp4",
+          thumbnailUrl: "/uploads/thumbnail-soccer.jpg",
+          duration: "0:45",
+          category: "sports",
+          uploader: "SoccerEdits",
+          views: 12500,
+          likes: 842,
+          downloads: 1560,
+          resolution: "1080p",
+          tags: ["soccer", "goals", "sports", "football", "highlights"],
+          isCopyrightFree: true
+        },
+        {
+          title: "Anime AMV - Epic Fight Scenes",
+          description: "Best anime fight scenes compilation with epic background music.",
+          videoUrl: "/uploads/sample-anime.mp4",
+          thumbnailUrl: "/uploads/thumbnail-anime.jpg",
+          duration: "1:22",
+          category: "anime",
+          uploader: "AnimeVibes",
+          views: 8500,
+          likes: 512,
+          downloads: 890,
+          resolution: "1080p",
+          tags: ["anime", "fight", "amv", "action", "japanese"],
+          isCopyrightFree: true
         }
+      ];
+
+      await Video.insertMany(sampleVideos);
+      console.log('✅ Sample videos initialized');
     }
+  } catch (error) {
+    console.log('❌ Error initializing default data:', error.message);
+  }
+};
 
-    // Enhanced API Functions
-    async function fetchVideos(endpoint = '/videos') {
-        if (!isBackendOnline) {
-            showDebugInfo('Using fallback data - Backend offline', true);
-            return getFallbackVideos();
-        }
+// ======================
+// API ROUTES
+// ======================
 
-        try {
-            console.log(`🔍 Fetching from: ${API_BASE}${endpoint}`);
-            const response = await fetch(`${API_BASE}${endpoint}`);
-            
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-            
-            const data = await response.json();
-            console.log('✅ API Response:', data);
-            
-            // Handle different response structures
-            if (data.videos && Array.isArray(data.videos)) return data.videos;
-            if (Array.isArray(data)) return data;
-            return [];
-            
-        } catch (error) {
-            console.error('❌ API Error:', error);
-            showDebugInfo(`API Error: ${error.message} - Using fallback data`, true);
-            return getFallbackVideos();
-        }
-    }
+// Health check
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    message: 'Best Edit Clips API is running!',
+    timestamp: new Date().toISOString(),
+    status: 'healthy'
+  });
+});
 
-    // Get trending videos
-    async function fetchTrendingVideos() {
-        const videos = await fetchVideos('/trending?limit=6');
-        console.log('📊 Trending videos:', videos);
-        return videos;
-    }
-
-    // Get recent videos - FIXED for your backend structure
-    async function fetchRecentVideos() {
-        try {
-            const response = await fetch(`${API_BASE}/videos?sortBy=createdAt&sortOrder=desc&limit=6`);
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            
-            const data = await response.json();
-            console.log('📊 Recent videos data:', data);
-            
-            // Your backend returns {videos: [], totalPages: x, currentPage: x}
-            if (data.videos && Array.isArray(data.videos)) {
-                return data.videos;
-            }
-            return [];
-        } catch (error) {
-            console.error('Recent videos error:', error);
-            return getFallbackVideos();
-        }
-    }
-
-    // Enhanced search function
-    async function searchVideos(query) {
-        try {
-            const response = await fetch(`${API_BASE}/search?q=${encodeURIComponent(query)}&limit=12`);
-            
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            
-            const data = await response.json();
-            return data.videos || data || [];
-            
-        } catch (error) {
-            console.error('Search error:', error);
-            return getFallbackVideos().filter(video => 
-                video.title.toLowerCase().includes(query.toLowerCase())
-            );
-        }
-    }
-
-    // Fallback data
-    function getFallbackVideos() {
-        return [
-            {
-                _id: 'fallback-1',
-                title: "Epic Soccer Goals Compilation",
-                description: "Amazing soccer goals from top leagues around the world.",
-                duration: "0:45",
-                category: "sports",
-                uploader: "SoccerEdits",
-                views: 12500,
-                likes: 842,
-                downloads: 1560,
-                isCopyrightFree: true
-            },
-            {
-                _id: 'fallback-2',
-                title: "Anime AMV - Epic Fight Scenes", 
-                description: "Best anime fight scenes compilation.",
-                duration: "1:22",
-                category: "anime",
-                uploader: "AnimeVibes",
-                views: 8500,
-                likes: 512,
-                downloads: 890,
-                isCopyrightFree: true
-            },
-            {
-                _id: 'fallback-3',
-                title: "Cinematic Slow Motion Sequences",
-                description: "Beautiful slow motion shots from films.",
-                duration: "0:38",
-                category: "slowmo",
-                uploader: "FilmMagic",
-                views: 7200,
-                likes: 421,
-                downloads: 650,
-                isCopyrightFree: true
-            }
-        ];
-    }
-
-    // FIXED: Enhanced video display function
-    function displayVideos(videos, containerId) {
-        const container = document.getElementById(containerId);
-        
-        if (!container) {
-            console.error(`❌ Container not found: ${containerId}`);
-            return;
-        }
-        
-        console.log(`📺 Displaying ${videos.length} videos in ${containerId}:`, videos);
-        
-        if (!videos || videos.length === 0) {
-            container.innerHTML = `
-                <div class="card" style="text-align: center; padding: 2rem; grid-column: 1 / -1;">
-                    <p style="color: var(--secondary-text);">No videos found</p>
-                    <p style="color: var(--accent-secondary); font-size: 0.8rem; margin-top: 0.5rem;">
-                        Backend Status: ${isBackendOnline ? 'Connected' : 'Offline'}
-                    </p>
-                </div>
-            `;
-            return;
-        }
-
-        container.innerHTML = '';
-
-        videos.forEach(video => {
-            const isFallback = video._id && video._id.includes('fallback');
-            const videoCard = `
-                <div class="card fade-in" onclick="showVideoDetails('${video._id}')">
-                    <div class="card-thumbnail">
-                        ${video.views > 5000 ? '<div class="trending-badge">Popular</div>' : ''}
-                        ${isFallback ? '<div class="trending-badge" style="background: #ff4444;">Demo</div>' : ''}
-                        <i class="fas fa-play-circle"></i>
-                    </div>
-                    <div class="card-content">
-                        <h3 class="card-title">${video.title || 'Untitled Video'}</h3>
-                        <div class="card-meta">
-                            <span>By ${video.uploader || 'Unknown'}</span>
-                            <span>${video.duration || '0:00'}</span>
-                        </div>
-                        <div class="card-stats">
-                            <span><i class="fas fa-eye"></i> ${(video.views || 0).toLocaleString()}</span>
-                            <span><i class="fas fa-heart"></i> ${video.likes || 0}</span>
-                            <span><i class="fas fa-download"></i> ${video.downloads || 0}</span>
-                        </div>
-                        ${video.isCopyrightFree ? '<div class="copyright-free"><i class="fas fa-check-circle"></i> Copyright Free</div>' : ''}
-                        ${isFallback ? '<div style="color: #ff4444; font-size: 0.7rem; margin-top: 0.5rem;">⚠️ Demo Data</div>' : ''}
-                    </div>
-                </div>
-            `;
-            container.innerHTML += videoCard;
-        });
-    }
-
-    // Enhanced initialization
-    async function initializeApp() {
-        showDebugInfo('Initializing application...');
-        
-        // Test backend first
-        await testBackendConnection();
-        
-        // Load videos
-        await loadHomepageVideos();
-        
-        // Hide debug after 5 seconds if successful
-        if (isBackendOnline) {
-            setTimeout(() => {
-                const debugDiv = document.getElementById('debugInfo');
-                if (debugDiv) debugDiv.style.display = 'none';
-            }, 5000);
-        }
-    }
-
-    // Load homepage videos - FIXED
-    async function loadHomepageVideos() {
-        try {
-            showDebugInfo('Loading videos from database...');
-            
-            const [trending, recent] = await Promise.all([
-                fetchTrendingVideos(),
-                fetchRecentVideos()
-            ]);
-            
-            console.log('🎯 Final trending:', trending);
-            console.log('🎯 Final recent:', recent);
-            
-            displayVideos(trending, 'trendingVideos');
-            displayVideos(recent, 'recentVideos');
-            
-            showDebugInfo(`✅ Loaded ${trending.length} trending + ${recent.length} recent videos`);
-        } catch (error) {
-            console.error('Error loading homepage videos:', error);
-            showDebugInfo('Error loading videos', true);
-        }
-    }
-
-    // Search functionality
-    let searchTimeout;
-    document.getElementById('searchInput').addEventListener('input', function(e) {
-        clearTimeout(searchTimeout);
-        const searchTerm = e.target.value.trim();
-        
-        if (searchTerm.length > 2) {
-            searchTimeout = setTimeout(async () => {
-                const videos = await searchVideos(searchTerm);
-                displayVideos(videos, 'trendingVideos');
-                document.getElementById('recentVideos').innerHTML = '<p style="text-align: center; color: var(--secondary-text); grid-column: 1 / -1;">Search results</p>';
-            }, 500);
-        } else if (searchTerm.length === 0) {
-            loadHomepageVideos();
-        }
-    });
-
-    // Category filter
-    async function filterByCategory(category) {
-        const videos = await fetchVideos(`/videos?category=${category}&limit=12`);
-        displayVideos(videos, 'trendingVideos');
-        document.getElementById('recentVideos').innerHTML = '<p style="text-align: center; color: var(--secondary-text); grid-column: 1 / -1;">Switch to "All" to see recent uploads</p>';
-    }
-
-    // Video modal functions
-    async function showVideoDetails(videoId) {
-        if (videoId.includes('fallback')) {
-            alert('This is demo data. Backend is currently offline.');
-            return;
-        }
-        
-        try {
-            const response = await fetch(`${API_BASE}/videos/${videoId}`);
-            if (!response.ok) throw new Error('Failed to fetch video details');
-            const video = await response.json();
-
-            const modal = document.getElementById('videoModal');
-            const modalContent = document.getElementById('modalContent');
-
-            modalContent.innerHTML = `
-                <h2>${video.title}</h2>
-                <div style="display: flex; gap: 1rem; margin: 1rem 0; color: var(--secondary-text); flex-wrap: wrap;">
-                    <span><i class="fas fa-user"></i> ${video.uploader}</span>
-                    <span><i class="fas fa-eye"></i> ${(video.views || 0).toLocaleString()} views</span>
-                    <span><i class="fas fa-clock"></i> ${video.duration}</span>
-                    <span><i class="fas fa-video"></i> ${video.resolution || '1080p'}</span>
-                </div>
-                <div style="background: var(--secondary-bg); height: 300px; border-radius: var(--border-radius); display: flex; align-items: center; justify-content: center; margin: 1rem 0;">
-                    <i class="fas fa-play-circle" style="font-size: 4rem; color: var(--accent);"></i>
-                </div>
-                <p style="margin-bottom: 1rem;">${video.description || 'No description available.'}</p>
-                <div style="margin: 1rem 0;">
-                    <div class="card-stats">
-                        <span><i class="fas fa-heart"></i> ${video.likes || 0} Likes</span>
-                        <span><i class="fas fa-download"></i> ${video.downloads || 0} Downloads</span>
-                    </div>
-                    ${video.tags && video.tags.length > 0 ? 
-                        `<div style="margin-top: 1rem;">
-                            <strong>Tags:</strong> ${video.tags.map(tag => `<span style="background: var(--secondary-bg); padding: 0.2rem 0.5rem; border-radius: 4px; margin: 0.2rem; display: inline-block;">${tag}</span>`).join('')}
-                        </div>` : ''}
-                    ${video.isCopyrightFree ? '<div class="copyright-free" style="margin-top: 1rem;"><i class="fas fa-check-circle"></i> This clip is copyright-free and ready to use in your projects</div>' : ''}
-                </div>
-                <div style="display: flex; gap: 1rem; margin-top: 2rem; flex-wrap: wrap;">
-                    <button class="upload-btn" onclick="handleDownload('${video._id}')">
-                        <i class="fas fa-download"></i> Download
-                    </button>
-                    <button class="upload-btn" style="background: var(--accent-secondary);" onclick="handleLike('${video._id}')">
-                        <i class="fas fa-heart"></i> Like
-                    </button>
-                </div>
-            `;
-
-            modal.style.display = 'flex';
-        } catch (error) {
-            console.error('Error loading video details:', error);
-            showError('Failed to load video details');
-        }
-    }
-
-    function closeVideoModal() {
-        document.getElementById('videoModal').style.display = 'none';
-    }
-
-    // Handle like functionality
-    async function handleLike(videoId) {
-        const result = await likeVideo(videoId);
-        if (result && result.success) {
-            showVideoDetails(videoId);
-        }
-    }
-
-    // Handle download functionality
-    async function handleDownload(videoId) {
-        const result = await downloadVideo(videoId);
-        if (result && result.success) {
-            if (!result.downloadUrl) {
-                showDebugInfo('Download started successfully!');
-            }
-        }
-    }
-
-    async function likeVideo(videoId) {
-        try {
-            const response = await fetch(`${API_BASE}/videos/${videoId}/like`, { method: 'POST' });
-            const data = await response.json();
-            if (response.ok) {
-                showDebugInfo('Video liked successfully!');
-                return data;
-            }
-        } catch (error) {
-            console.error('Like error:', error);
-        }
-        return { success: false };
-    }
-
-    async function downloadVideo(videoId) {
-        try {
-            const response = await fetch(`${API_BASE}/videos/${videoId}/download`, { method: 'POST' });
-            const data = await response.json();
-            if (response.ok) {
-                showDebugInfo('Download started successfully!');
-                return data;
-            }
-        } catch (error) {
-            console.error('Download error:', error);
-        }
-        return { success: false };
-    }
-
-    // Theme toggle functionality
-    const themeToggle = document.getElementById('themeToggle');
-    const body = document.body;
+// Get all videos
+app.get('/api/videos', async (req, res) => {
+  try {
+    const { category, limit = 12, sortBy = 'createdAt', sortOrder = 'desc' } = req.query;
     
-    if (themeToggle) {
-        themeToggle.addEventListener('click', () => {
-            body.classList.toggle('light-mode');
-            
-            if (body.classList.contains('light-mode')) {
-                themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
-                localStorage.setItem('theme', 'light');
-            } else {
-                themeToggle.innerHTML = '<i class="fas fa-moon"></i>';
-                localStorage.setItem('theme', 'dark');
-            }
-        });
-
-        // Check for saved theme preference
-        const savedTheme = localStorage.getItem('theme');
-        if (savedTheme === 'light') {
-            body.classList.add('light-mode');
-            themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
-        }
+    let query = {};
+    if (category && category !== 'all') {
+      query.category = category;
     }
 
-    // Utility functions
-    function showError(message) {
-        alert(`Error: ${message}`);
-    }
+    const sortOptions = {};
+    sortOptions[sortBy] = sortOrder === 'desc' ? -1 : 1;
 
-    function showUploadModal() {
-        alert('Upload functionality would be available when user is logged in.');
-    }
+    const videos = await Video.find(query)
+      .sort(sortOptions)
+      .limit(parseInt(limit));
 
-    function showLoginModal() {
-        alert('Login functionality would be available when backend is connected.');
-    }
+    res.json({ videos });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
 
-    function showRegisterModal() {
-        alert('Registration functionality would be available when backend is connected.');
-    }
+// Get single video
+app.get('/api/videos/:id', async (req, res) => {
+  try {
+    const video = await Video.findById(req.params.id);
+    if (!video) return res.status(404).json({ message: 'Video not found' });
 
-    function toggleUserMenu() {
-        alert('User menu would be available when user is logged in.');
-    }
+    // Increment views
+    video.views += 1;
+    await video.save();
 
-    // Initialize when page loads
-    document.addEventListener('DOMContentLoaded', function() {
-        initializeApp();
-        
-        // Close modal when clicking outside
-        const videoModal = document.getElementById('videoModal');
-        if (videoModal) {
-            videoModal.addEventListener('click', function(e) {
-                if (e.target === this) {
-                    closeVideoModal();
-                }
-            });
-        }
-    });
+    res.json(video);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
 
-    // Fade-in animation on scroll
-    const fadeElements = document.querySelectorAll('.fade-in');
-    const fadeInOnScroll = () => {
-        fadeElements.forEach(element => {
-            const elementTop = element.getBoundingClientRect().top;
-            const elementVisible = 150;
-            if (elementTop < window.innerHeight - elementVisible) {
-                element.style.opacity = 1;
-                element.style.transform = 'translateY(0)';
-            }
-        });
-    };
+// Get trending videos
+app.get('/api/trending', async (req, res) => {
+  try {
+    const { limit = 6 } = req.query;
+    const videos = await Video.find()
+      .sort({ views: -1, likes: -1 })
+      .limit(parseInt(limit));
+    res.json(videos);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Get recent videos
+app.get('/api/recent', async (req, res) => {
+  try {
+    const { limit = 6 } = req.query;
+    const videos = await Video.find()
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit));
+    res.json(videos);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Search videos
+app.get('/api/search', async (req, res) => {
+  try {
+    const { q, limit = 12 } = req.query;
     
-    window.addEventListener('load', fadeInOnScroll);
-    window.addEventListener('scroll', fadeInOnScroll);
-</script>
+    let query = {};
+    if (q) {
+      query.$or = [
+        { title: { $regex: q, $options: 'i' } },
+        { description: { $regex: q, $options: 'i' } },
+        { tags: { $in: [new RegExp(q, 'i')] } }
+      ];
+    }
+
+    const videos = await Video.find(query)
+      .sort({ views: -1 })
+      .limit(parseInt(limit));
+
+    res.json({ videos });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Like video
+app.post('/api/videos/:id/like', async (req, res) => {
+  try {
+    const video = await Video.findById(req.params.id);
+    if (!video) return res.status(404).json({ message: 'Video not found' });
+
+    video.likes += 1;
+    await video.save();
+
+    res.json({ 
+      message: 'Video liked successfully', 
+      likes: video.likes,
+      videoId: video._id 
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Download video
+app.post('/api/videos/:id/download', async (req, res) => {
+  try {
+    const video = await Video.findById(req.params.id);
+    if (!video) return res.status(404).json({ message: 'Video not found' });
+
+    video.downloads += 1;
+    await video.save();
+
+    res.json({ 
+      message: 'Download ready',
+      downloadUrl: video.videoUrl,
+      downloads: video.downloads,
+      videoId: video._id
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Get categories
+app.get('/api/categories', async (req, res) => {
+  try {
+    const categories = await Category.find().sort({ name: 1 });
+    res.json(categories);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Initialize data
+app.post('/api/init', async (req, res) => {
+  try {
+    await initializeDefaultData();
+    res.json({ message: 'Database initialized with default data' });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// ======================
+// SERVER START
+// ======================
+const PORT = process.env.PORT || 5000;
+
+// Initialize default data when server starts
+mongoose.connection.once('open', () => {
+  initializeDefaultData();
+});
+
+app.listen(PORT, () => {
+  console.log('🚀 Best Edit Clips Backend Started!');
+  console.log(`📡 Server running on port ${PORT}`);
+  console.log(`🌐 Health: http://localhost:${PORT}/api/health`);
+});
