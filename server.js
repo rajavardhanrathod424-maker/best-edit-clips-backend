@@ -1,10 +1,21 @@
 const express = require('express');
-const cors = require('express');
+const cors = require('cors'); // ✅ Fixed: Import from 'cors' package
 
 const app = express();
 
-// Middleware
-app.use(cors());
+// ✅ FIXED CORS CONFIGURATION
+app.use(cors({
+  origin: [
+    'https://rajavardhanrathod424-maker.github.io',
+    'http://localhost:3000',
+    'http://127.0.0.1:5500',
+    'http://localhost:5000'
+  ],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  credentials: true
+}));
+
 app.use(express.json());
 
 // Sample video data
@@ -251,6 +262,7 @@ app.listen(PORT, () => {
   console.log('🚀 ==================================');
   console.log(`📡 Server running on port ${PORT}`);
   console.log(`🌐 Health: http://localhost:${PORT}/api/health`);
+  console.log('✅ CORS configured for GitHub Pages');
   console.log('✅ No database required - using sample data');
   console.log('✅ All endpoints working');
   console.log('🚀 ==================================');
